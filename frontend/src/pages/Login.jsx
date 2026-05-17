@@ -95,7 +95,7 @@ export default function Login() {
           <p>admin@company.com</p>
           <p>manager@company.com</p>
           <p>employee@company.com</p>
-          <p className="mt-2">Password for all: <span className="font-mono">Password123</span></p>
+          <p className="mt-2">Password for all: <span className="font-mono">Password</span></p>
         </div>
       </div>
     </div>
