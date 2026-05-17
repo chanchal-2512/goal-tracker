@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000',
+  baseURL: 'https://goal-tracker-f5iz.onrender.com', // your Render backend URL
 });
 
 api.interceptors.request.use((config) => {
