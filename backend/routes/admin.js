@@ -88,66 +88,46 @@ router.post('/goals/:id/unlock', ...adminOnly, async (req, res) => {
     const gRes = await pool.query('SELECT * FROM goals WHERE id=$1', [goalId]);
     if (!gRes.rows.length) return res.status(404).json({ error: 'Goal not found' });
     if (!gRes.rows[0].is_locked) return res.status(400).json({ error: 'Goal is not locked' });
-
     await pool.query(
-      'UPDATE goals SET is_locked=FALSE, status=\'submitted\', updated_at=NOW() WHERE id=$1',
+      "UPDATE goals SET is_locked=FALSE, status='submitted', updated_at=NOW() WHERE id=$1",
       [goalId]
     );
     await pool.query(
-      'INSERT INTO audit_log (goal_id,changed_by,field_changed,old_value,new_value,reason) VALUES ($1,$2,\'is_locked\',\'true\',\'false\',$3)',
+      "INSERT INTO audit_log (goal_id,changed_by,field_changed,old_value,new_value,reason) VALUES ($1,$2,'is_locked','true','false',$3)",
       [goalId, req.user.id, reason.trim()]
     );
     res.json({ message: 'Goal unlocked and set to submitted' });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ─────────────────────────────────────────────────────────────
 // GET /api/admin/analytics
-// Provides all data needed for the analytics dashboard
-// ─────────────────────────────────────────────────────────────
 router.get('/analytics', ...adminOnly, async (req, res) => {
   try {
     const [goalDist, scoreData, checkinRates, uomDist] = await Promise.all([
-      // Goal distribution by thrust area and status
       pool.query(`
         SELECT thrust_area, status, uom_type, COUNT(*) as count
         FROM goals
         WHERE NOT is_shared OR is_shared IS NULL
-        GROUP BY thrust_area, status, uom_type
-        ORDER BY thrust_area
+        GROUP BY thrust_area, status, uom_type ORDER BY thrust_area
       `),
-      // Score data per employee per quarter
       pool.query(`
-        SELECT
-          u.name as employee_name,
-          a.cycle_phase,
-          a.score,
-          g.title as goal_title,
-          g.weightage
+        SELECT u.name as employee_name, a.cycle_phase, a.score, g.title as goal_title, g.weightage
         FROM achievements a
-        JOIN goals g ON g.id = a.goal_id
-        JOIN users u ON u.id = g.employee_id
+        JOIN goals g ON g.id=a.goal_id
+        JOIN users u ON u.id=g.employee_id
         WHERE a.score IS NOT NULL
         ORDER BY u.name, a.cycle_phase
       `),
-      // Check-in comments count per manager
       pool.query(`
         SELECT u.name as manager_name, COUNT(c.id) as checkin_count
-        FROM users u
-        LEFT JOIN checkin_comments c ON c.manager_id = u.id
-        WHERE u.role = 'manager'
-        GROUP BY u.name
-        ORDER BY checkin_count DESC
+        FROM users u LEFT JOIN checkin_comments c ON c.manager_id=u.id
+        WHERE u.role='manager' GROUP BY u.name ORDER BY checkin_count DESC
       `),
-      // UoM distribution
       pool.query(`
-        SELECT uom_type, COUNT(*) as count
-        FROM goals
-        WHERE NOT is_shared OR is_shared IS NULL
-        GROUP BY uom_type
+        SELECT uom_type, COUNT(*) as count FROM goals
+        WHERE NOT is_shared OR is_shared IS NULL GROUP BY uom_type
       `),
     ]);
-
     res.json({
       goalDistribution: goalDist.rows,
       scoreData:        scoreData.rows,
@@ -156,6 +136,42 @@ router.get('/analytics', ...adminOnly, async (req, res) => {
     });
   } catch (err) {
     console.error('Analytics error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/admin/checkin-completion
+// Shows which managers have conducted check-ins per employee per quarter
+// Used in the Completion Dashboard
+// ─────────────────────────────────────────────────────────────
+router.get('/checkin-completion', ...adminOnly, async (req, res) => {
+  try {
+    // Get all employees with their approved goals and check-in status
+    const result = await pool.query(`
+      SELECT
+        u.id   as employee_id,
+        u.name as employee_name,
+        u.email as employee_email,
+        u.department,
+        m.name as manager_name,
+        COUNT(DISTINCT g.id) as total_approved_goals,
+        COUNT(DISTINCT c.goal_id || '-' || c.cycle_phase) as total_checkins,
+        COALESCE(
+          json_agg(DISTINCT c.cycle_phase) FILTER (WHERE c.cycle_phase IS NOT NULL),
+          '[]'
+        ) as checked_quarters
+      FROM users u
+      LEFT JOIN users m ON m.id = u.manager_id
+      LEFT JOIN goals g ON g.employee_id = u.id AND g.status = 'approved'
+      LEFT JOIN checkin_comments c ON c.goal_id = g.id
+      WHERE u.role = 'employee'
+      GROUP BY u.id, u.name, u.email, u.department, m.name
+      ORDER BY m.name, u.name
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Checkin completion error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });

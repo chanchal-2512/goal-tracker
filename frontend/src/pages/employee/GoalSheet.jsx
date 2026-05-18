@@ -31,17 +31,20 @@ const GOAL_STATUS_OPTIONS = [
 ];
 
 const QUARTERS = [
-  { value: 'q1', label: 'Q1', window: 'July' },
-  { value: 'q2', label: 'Q2', window: 'October' },
-  { value: 'q3', label: 'Q3', window: 'January' },
-  { value: 'q4', label: 'Q4 / Annual', window: 'March–April' },
+  { value: 'q1', label: 'Q1', window: 'July – September' },
+  { value: 'q2', label: 'Q2', window: 'October – December' },
+  { value: 'q3', label: 'Q3', window: 'January – March' },
+  { value: 'q4', label: 'Q4 / Annual', window: 'March – April' },
 ];
 
+// Returns which quarter is currently active based on month
+// Returns null during goal-setting phase (May–June)
 function getActiveQuarter() {
   const month = new Date().getMonth() + 1;
   if (month >= 7  && month <= 9)  return 'q1';
   if (month >= 10 && month <= 12) return 'q2';
   if (month >= 1  && month <= 3)  return 'q3';
+  if (month >= 4  && month <= 6)  return null; // goal setting phase
   return null;
 }
 
@@ -90,12 +93,10 @@ export default function GoalSheet() {
     setLoading(true);
     setPageError('');
     try {
-      // Fetch all cycles for the picker
       const cyclesRes = await api.get('/api/goals/cycles/all');
       const cycles = cyclesRes.data ?? [];
       setAllCycles(cycles);
 
-      // Determine which cycle to show
       let targetCycle;
       if (cycleId) {
         targetCycle = cycles.find(c => c.id === cycleId);
@@ -114,9 +115,8 @@ export default function GoalSheet() {
 
       const goalsRes = await api.get(`/api/goals/my?cycle_id=${targetCycle.id}`);
       setGoals(goalsRes.data ?? []);
-    } catch (err) {
+    } catch {
       setPageError('Failed to load data. Please refresh.');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -132,14 +132,12 @@ export default function GoalSheet() {
     loadData(cycleId);
   };
 
-  // Load achievements for a goal
   const loadAchievements = async (goalId) => {
     try {
       const res = await api.get(`/api/checkins/achievement/${goalId}`);
       setAchievements(prev => ({ ...prev, [goalId]: res.data ?? [] }));
       return res.data ?? [];
-    } catch (err) {
-      console.error('Failed to load achievements:', err.message);
+    } catch {
       return [];
     }
   };
@@ -159,6 +157,20 @@ export default function GoalSheet() {
 
   const handleSaveAchievement = async (goal) => {
     if (!achForm.goal_status) { setAchError('Please select a status.'); return; }
+
+    // Quarterly window enforcement
+    const activeQuarter = getActiveQuarter();
+    if (activeQuarter && achPhase !== activeQuarter) {
+      const activeLabel = QUARTERS.find(q => q.value === activeQuarter)?.label;
+      const selectedLabel = QUARTERS.find(q => q.value === achPhase)?.label;
+      const confirmed = window.confirm(
+        `The current active check-in window is ${activeLabel}.\n` +
+        `You are logging for ${selectedLabel}.\n\n` +
+        `Proceed anyway? (Admins may allow backfilling data.)`
+      );
+      if (!confirmed) return;
+    }
+
     setAchSaving(true); setAchError('');
     try {
       await api.post('/api/checkins/achievement', {
@@ -175,7 +187,7 @@ export default function GoalSheet() {
     } finally { setAchSaving(false); }
   };
 
-  // ── Derived values ─────────────────────────────────────────
+  // Derived values
   const realGoals = goals.filter(g =>
     g.status !== 'returned' &&
     !(g.is_shared && g.status === 'draft' && parseFloat(g.weightage || 0) === 0)
@@ -187,13 +199,13 @@ export default function GoalSheet() {
 
   const totalWeightage = realGoals.reduce((s, g) => s + parseFloat(g.weightage || 0), 0);
 
-  // KEY FIX: only add back editingWeight if goal is currently counted in totalWeightage
-  // Returned goals and unset shared goals are NOT in realGoals, so don't add them back
+  // Only add back editing weight if goal is currently counted in totalWeightage
   const editingWeight = (editingGoal &&
     editingGoal.status !== 'returned' &&
     !(editingGoal.is_shared && parseFloat(editingGoal.weightage || 0) === 0))
     ? parseFloat(editingGoal.weightage || 0)
     : 0;
+
   const remainingWeight   = parseFloat((100 - totalWeightage + editingWeight).toFixed(1));
   const weightageComplete = Math.abs(totalWeightage - 100) < 0.01;
 
@@ -205,10 +217,10 @@ export default function GoalSheet() {
   const allApproved       = realGoals.length > 0 && realGoals.every(g => g.status === 'approved');
   const canAddMore        = realGoals.length < 8;
   const isFullyLocked     = realGoals.length > 0 && realGoals.every(g => g.is_locked);
-  const activeQuarter     = getActiveQuarter();
   const isActiveCycle     = cycle?.is_active;
+  const activeQuarter     = getActiveQuarter();
 
-  // ── Form helpers ───────────────────────────────────────────
+  // Form helpers
   const openAddForm = () => {
     setEditingGoal(null); setForm(emptyForm); setFormError(''); setShowForm(true);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
@@ -245,7 +257,8 @@ export default function GoalSheet() {
     try {
       if (editingGoal) {
         await api.put(`/api/goals/${editingGoal.id}`, {
-          ...form, status: editingGoal.status === 'returned' ? 'draft' : editingGoal.status,
+          ...form,
+          status: editingGoal.status === 'returned' ? 'draft' : editingGoal.status,
         });
       } else {
         await api.post('/api/goals', { ...form, cycle_id: cycle.id, status: 'draft' });
@@ -316,11 +329,14 @@ export default function GoalSheet() {
                 <p className="text-sm font-semibold text-indigo-800">{cycle?.name}</p>
                 <p className="text-xs text-indigo-500 mt-0.5">
                   {cycle && `Open until ${new Date(cycle.closes_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`}
-                  {!isActiveCycle && <span className="ml-2 text-orange-500 font-medium">(Inactive cycle — view only)</span>}
+                  {!isActiveCycle && <span className="ml-2 text-orange-500 font-medium">(Inactive — view only)</span>}
                   {activeQuarter && isActiveCycle && (
                     <span className="ml-2 font-medium text-indigo-700">
-                      · {QUARTERS.find(q => q.value === activeQuarter)?.label} check-in active
+                      · {QUARTERS.find(q => q.value === activeQuarter)?.label} check-in window active
                     </span>
+                  )}
+                  {!activeQuarter && isActiveCycle && (
+                    <span className="ml-2 text-indigo-600"> · Goal setting phase</span>
                   )}
                 </p>
               </div>
@@ -329,15 +345,11 @@ export default function GoalSheet() {
                   <span className="text-xs font-medium bg-green-100 text-green-700 px-3 py-1 rounded-full">All approved ✓</span>
                 )}
                 {allCycles.length > 1 && (
-                  <select
-                    value={selectedCycleId || ''}
+                  <select value={selectedCycleId || ''}
                     onChange={e => handleCycleChange(parseInt(e.target.value))}
-                    className="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 bg-white text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                  >
+                    className="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 bg-white text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-400">
                     {allCycles.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.is_active ? '(active)' : ''}
-                      </option>
+                      <option key={c.id} value={c.id}>{c.name} {c.is_active ? '(active)' : ''}</option>
                     ))}
                   </select>
                 )}
@@ -366,7 +378,7 @@ export default function GoalSheet() {
             </div>
             {unsetSharedGoals.length > 0 && (
               <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-700">
-                ⚠ {unsetSharedGoals.length} shared KPI{unsetSharedGoals.length > 1 ? 's' : ''} below need a weightage set before they count.
+                ⚠ {unsetSharedGoals.length} shared KPI{unsetSharedGoals.length > 1 ? 's' : ''} below need a weightage before they count.
               </div>
             )}
           </div>
@@ -412,7 +424,6 @@ export default function GoalSheet() {
           {realGoals.map((goal) => {
             const goalAchs = achievements[goal.id] ?? [];
             const isAchOpen = openAchGoalId === goal.id;
-
             return (
               <div key={goal.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
                 <div className="p-5">
@@ -457,6 +468,17 @@ export default function GoalSheet() {
                   <div className="border-t border-gray-100 bg-gray-50 p-5">
                     <h4 className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Quarterly Achievement Tracking</h4>
 
+                    {/* Quarter window info banner */}
+                    <div className={`rounded-lg px-3 py-2 text-xs mb-4 ${
+                      activeQuarter
+                        ? 'bg-indigo-50 border border-indigo-200 text-indigo-700'
+                        : 'bg-gray-100 border border-gray-200 text-gray-500'
+                    }`}>
+                      {activeQuarter
+                        ? `✓ Active check-in window: ${QUARTERS.find(q => q.value === activeQuarter)?.label} — ${QUARTERS.find(q => q.value === activeQuarter)?.window}`
+                        : 'No active check-in window — currently in goal setting phase. You can still log achievements but they are outside the scheduled window.'}
+                    </div>
+
                     {/* Past achievements grid */}
                     {goalAchs.length > 0 && (
                       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -491,12 +513,7 @@ export default function GoalSheet() {
 
                     {/* Log form */}
                     <div className="bg-white border border-indigo-100 rounded-xl p-4">
-                      <p className="text-xs font-semibold text-gray-700 mb-3">
-                        Log achievement
-                        {activeQuarter
-                          ? ` — ${QUARTERS.find(q => q.value === activeQuarter)?.label} window active`
-                          : ' — No active check-in window (goal setting phase)'}
-                      </p>
+                      <p className="text-xs font-semibold text-gray-700 mb-3">Log / update achievement</p>
 
                       {achError && (
                         <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg mb-3">⚠ {achError}</div>
@@ -521,14 +538,19 @@ export default function GoalSheet() {
                                 q.value === activeQuarter ? 'border-indigo-300 text-indigo-600 bg-indigo-50' :
                                 'border-gray-200 text-gray-500 hover:border-gray-300'
                               }`}>
-                              {q.label}{q.value === activeQuarter && <span className="ml-1">●</span>}
+                              {q.label}{q.value === activeQuarter && <span className="ml-1 text-indigo-400">●</span>}
                             </button>
                           ))}
                         </div>
-                        <p className="text-xs text-gray-400 mt-1">Window: {QUARTERS.find(q => q.value === achPhase)?.window}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Window: {QUARTERS.find(q => q.value === achPhase)?.window}
+                          {achPhase !== activeQuarter && activeQuarter && (
+                            <span className="text-orange-500 ml-2">⚠ Not the active window</span>
+                          )}
+                        </p>
                       </div>
 
-                      {['min', 'max'].includes(goal.uom_type) && (
+                      {['min','max'].includes(goal.uom_type) && (
                         <div className="mb-3">
                           <label className="block text-xs font-medium text-gray-600 mb-1">
                             Actual value
@@ -603,6 +625,10 @@ export default function GoalSheet() {
                       </div>
                       <p className="text-sm font-semibold text-gray-900">{goal.title}</p>
                       {goal.description && <p className="text-xs text-gray-500 mt-0.5">{goal.description}</p>}
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                        <span>UoM: <span className="text-gray-600">{UOM_OPTIONS.find(u => u.value === goal.uom_type)?.label}</span></span>
+                        {goal.target_value != null && <span>Target: <span className="text-gray-600">{goal.target_value}</span></span>}
+                      </div>
                       <p className="text-xs text-purple-600 mt-2">ℹ Title and target are fixed. Only weightage can be changed.</p>
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
@@ -638,7 +664,6 @@ export default function GoalSheet() {
             <h2 className="text-sm font-semibold text-gray-800 mb-4">
               {editingGoal?.is_shared ? 'Set weightage for shared KPI' : editingGoal ? 'Edit goal' : 'New goal'}
             </h2>
-
             {formError && (
               <div ref={errorRef} className="bg-red-50 border border-red-300 text-red-700 text-sm px-4 py-3 rounded-lg mb-4 font-medium">
                 ⚠ {formError}
@@ -650,7 +675,7 @@ export default function GoalSheet() {
                   ? `${remainingWeight}% available · currently ${editingGoal.weightage}% · minimum 10%`
                   : editingGoal
                     ? `Editing: currently ${editingGoal.weightage}% · up to ${remainingWeight}% available`
-                    : `${remainingWeight}% available to allocate · minimum 10% per goal`}
+                    : `${remainingWeight}% available · minimum 10% per goal`}
               </div>
             )}
 
@@ -711,7 +736,7 @@ export default function GoalSheet() {
                       ))}
                     </div>
                   </div>
-                  {['min', 'max'].includes(form.uom_type) && (
+                  {['min','max'].includes(form.uom_type) && (
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Target value</label>
                       <input type="number" name="target_value" value={form.target_value} onChange={handleChange}
