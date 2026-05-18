@@ -269,11 +269,11 @@ export default function AdminDashboard() {
                   <p className="px-5 py-8 text-sm text-gray-400 text-center">No employees found.</p>
                 )}
                 {employees.map(emp => {
-                  const empGoals   = allGoals.filter(g => g.employee_id === emp.id && !g.is_shared);
+                  const empGoals   = allGoals.filter(g => g.employee_id === emp.id);
                   const hasSubmit  = empGoals.some(g => ['submitted','approved'].includes(g.status));
                   const hasApprove = empGoals.length > 0 && empGoals.every(g => g.status === 'approved');
                   const total      = empGoals.filter(g => g.status !== 'returned')
-                                             .reduce((s, g) => s + parseFloat(g.weightage || 0), 0);
+                                            .reduce((s, g) => s + parseFloat(g.weightage || 0), 0);
                   return (
                     <div key={emp.id} className="px-5 py-3 flex items-center justify-between">
                       <div>
