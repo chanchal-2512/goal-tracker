@@ -181,8 +181,13 @@ export default function AdminDashboard() {
   const employees   = users.filter(u => u.role === 'employee');
   const submitted   = [...new Set(
     allGoals
-      .filter(g => ['submitted','approved'].includes(g.status) && g.status !== 'returned')
+      .filter(g =>
+        ['submitted', 'approved'].includes(g.status) &&
+        g.status !== 'returned' &&
+        !(g.is_shared && g.status === 'approved' && parseFloat(g.weightage || 0) === 0) // exclude unset shared goals
+      )
       .map(g => g.employee_id)
+      .filter(id => employees.some(e => e.id === id)) // exclude non-employees like Sara
   )];
   const approved    = employees.filter(emp => {
     const empActive = allGoals.filter(g =>
