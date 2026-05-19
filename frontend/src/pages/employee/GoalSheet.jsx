@@ -670,12 +670,6 @@ export default function GoalSheet() {
               <h2 className="text-sm font-semibold text-gray-800 mb-4">
                 {editingGoal?.is_shared ? 'Set weightage for shared KPI' : editingGoal ? 'Edit goal' : 'New goal'}
               </h2>
-              {!editingGoal && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
-                  ✏️ Write a <span className="font-medium">SMART goal</span> — Specific, Measurable, Achievable, Relevant, Time-bound.
-                  Example: <em>"Achieve ₹50L in Q1 sales by March 2026"</em> rather than <em>"Increase sales"</em>.
-                </div>
-              )}
               {formError && (
                 <div ref={errorRef} className="bg-red-50 border border-red-300 text-red-700 text-sm px-4 py-3 rounded-lg mb-4 font-medium">
                   ⚠ {formError}
