@@ -179,8 +179,19 @@ export default function AdminDashboard() {
 
   // Stats
   const employees   = users.filter(u => u.role === 'employee');
-  const submitted   = [...new Set(allGoals.filter(g => ['submitted','approved'].includes(g.status)).map(g => g.employee_id))];
-  const approved    = [...new Set(allGoals.filter(g => g.status === 'approved').map(g => g.employee_id))];
+  const submitted   = [...new Set(
+    allGoals
+      .filter(g => ['submitted','approved'].includes(g.status) && g.status !== 'returned')
+      .map(g => g.employee_id)
+  )];
+  const approved    = employees.filter(emp => {
+    const empActive = allGoals.filter(g =>
+      g.employee_id === emp.id &&
+      g.status !== 'returned' &&
+      !(g.is_shared && g.status === 'draft' && parseFloat(g.weightage || 0) === 0)
+    );
+    return empActive.length > 0 && empActive.every(g => g.status === 'approved');
+  }).map(e => e.id);
   const lockedGoals = allGoals.filter(g => g.is_locked);
 
   if (loading) return (
@@ -269,11 +280,27 @@ export default function AdminDashboard() {
                   <p className="px-5 py-8 text-sm text-gray-400 text-center">No employees found.</p>
                 )}
                 {employees.map(emp => {
-                  const empGoals   = allGoals.filter(g => g.employee_id === emp.id);
-                  const hasSubmit  = empGoals.some(g => ['submitted','approved'].includes(g.status));
-                  const hasApprove = empGoals.length > 0 && empGoals.every(g => g.status === 'approved');
-                  const total      = empGoals.filter(g => g.status !== 'returned')
-                                            .reduce((s, g) => s + parseFloat(g.weightage || 0), 0);
+                  // All goals for this employee excluding returned ones
+                  const empGoals = allGoals.filter(g =>
+                    g.employee_id === emp.id &&
+                    g.status !== 'returned'
+                  );
+
+                  // Count only goals with actual weightage (exclude unset shared drafts)
+                  const countedGoals = empGoals.filter(g =>
+                    !(g.is_shared && g.status === 'draft' && parseFloat(g.weightage || 0) === 0)
+                  );
+
+                  // Total weightage from all active goals (including shared ones with weightage set)
+                  const total = countedGoals.reduce((s, g) => s + parseFloat(g.weightage || 0), 0);
+
+                  // Has submitted = any goal in submitted or approved state
+                  const hasSubmit = empGoals.some(g => ['submitted', 'approved'].includes(g.status));
+
+                  // Fully approved = all counted goals are approved (no drafts or submitted remaining)
+                  const hasApprove = countedGoals.length > 0 &&
+                    countedGoals.every(g => g.status === 'approved');
+
                   return (
                     <div key={emp.id} className="px-5 py-3 flex items-center justify-between">
                       <div>
@@ -281,11 +308,13 @@ export default function AdminDashboard() {
                         <p className="text-xs text-gray-400">{emp.email} · {emp.department}</p>
                       </div>
                       <div className="flex items-center gap-3 text-xs">
-                        <span className="text-gray-400">{empGoals.length} goals · {total.toFixed(0)}%</span>
+                        <span className="text-gray-400">
+                          {countedGoals.length} goals · {total.toFixed(0)}%
+                        </span>
                         <span className={`px-2 py-1 rounded-full font-medium ${
                           hasApprove ? 'bg-green-100 text-green-700' :
                           hasSubmit  ? 'bg-blue-100 text-blue-700'   :
-                                       'bg-gray-100 text-gray-500'
+                                      'bg-gray-100 text-gray-500'
                         }`}>
                           {hasApprove ? '✓ Approved' : hasSubmit ? 'Submitted' : 'Draft / Not started'}
                         </span>

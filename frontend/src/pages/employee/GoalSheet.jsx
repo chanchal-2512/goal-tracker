@@ -381,6 +381,11 @@ export default function GoalSheet() {
                 ⚠ {unsetSharedGoals.length} shared KPI{unsetSharedGoals.length > 1 ? 's' : ''} below need a weightage before they count.
               </div>
             )}
+            {hasDraftGoals && (
+              <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                💡 <span className="font-medium">Tip:</span> Goals are editable until submitted. After approval, contact your manager if changes are needed.
+              </div>
+            )}
           </div>
         )}
 
@@ -416,8 +421,22 @@ export default function GoalSheet() {
         {/* Goal cards */}
         <div className="space-y-3">
           {realGoals.length === 0 && unsetSharedGoals.length === 0 && !showForm && (
-            <div className="text-center py-14 bg-white border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
-              No goals yet — click "+ Add goal" below to get started.
+            <div className="text-center py-14 bg-white border border-dashed border-gray-300 rounded-xl px-6">
+              <p className="text-2xl mb-2">🎯</p>
+              <p className="text-gray-700 font-medium text-sm mb-1">No goals yet</p>
+              <p className="text-gray-400 text-xs mb-4">Click "+ Add goal" below to get started.</p>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-left text-xs text-blue-700 max-w-sm mx-auto">
+                <p className="font-semibold mb-1">💡 Write SMART goals:</p>
+
+                <ul className="space-y-0.5">
+                  <li><span className="font-medium">S</span>pecific — clearly define what you want to achieve</li>
+                  <li><span className="font-medium">M</span>easurable — set a numeric or date-based target</li>
+                  <li><span className="font-medium">A</span>chievable — realistic given your resources</li>
+                  <li><span className="font-medium">R</span>elevant — aligned to your thrust area</li>
+                  <li><span className="font-medium">T</span>ime-bound — set a deadline or quarterly target</li>
+                </ul>
+              </div>
             </div>
           )}
 
@@ -462,7 +481,11 @@ export default function GoalSheet() {
                     </div>
                   </div>
                 </div>
-
+                {goal.is_locked && goal.status === 'approved' && (
+                  <p className="text-xs text-gray-400 mt-2 px-5 pb-4">
+                    🔒 This goal is locked. If you need changes, please speak to your manager.
+                  </p>
+                )}
                 {/* Achievement panel */}
                 {isAchOpen && (
                   <div className="border-t border-gray-100 bg-gray-50 p-5">
@@ -492,7 +515,11 @@ export default function GoalSheet() {
                               {ach ? (
                                 <>
                                   <p className="text-gray-800 mt-0.5">
-                                    {ach.actual_value != null ? ach.actual_value : ach.actual_date ?? '—'}
+                                    {ach.actual_value != null
+                                      ? ach.actual_value
+                                      : ach.actual_date
+                                        ? new Date(ach.actual_date).toLocaleDateString('en-IN')
+                                        : '—'}
                                   </p>
                                   <p className={`font-medium mt-0.5 capitalize ${
                                     ach.goal_status === 'completed' ? 'text-green-600' :
@@ -664,6 +691,12 @@ export default function GoalSheet() {
             <h2 className="text-sm font-semibold text-gray-800 mb-4">
               {editingGoal?.is_shared ? 'Set weightage for shared KPI' : editingGoal ? 'Edit goal' : 'New goal'}
             </h2>
+            {!editingGoal && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
+                ✏️ Write a <span className="font-medium">SMART goal</span> — Specific, Measurable, Achievable, Relevant, Time-bound.
+                Example: <em>"Achieve ₹50L in Q1 sales by March 2026"</em> rather than <em>"Increase sales"</em>.
+              </div>
+            )}
             {formError && (
               <div ref={errorRef} className="bg-red-50 border border-red-300 text-red-700 text-sm px-4 py-3 rounded-lg mb-4 font-medium">
                 ⚠ {formError}
