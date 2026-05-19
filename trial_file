@@ -910,5 +910,6 @@ export default function GoalSheet() {
           </div>
         )}
       </div>
+    </div>
   );
 }
