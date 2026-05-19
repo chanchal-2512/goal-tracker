@@ -37,14 +37,12 @@ const QUARTERS = [
   { value: 'q4', label: 'Q4 / Annual', window: 'March – April' },
 ];
 
-// Returns which quarter is currently active based on month
-// Returns null during goal-setting phase (May–June)
 function getActiveQuarter() {
   const month = new Date().getMonth() + 1;
   if (month >= 7  && month <= 9)  return 'q1';
   if (month >= 10 && month <= 12) return 'q2';
   if (month >= 1  && month <= 3)  return 'q3';
-  if (month >= 4  && month <= 6)  return null; // goal setting phase
+  if (month >= 4  && month <= 6)  return null;
   return null;
 }
 
@@ -77,7 +75,6 @@ export default function GoalSheet() {
   const [submitting,      setSubmitting]      = useState(false);
   const [pageError,       setPageError]       = useState('');
 
-  // Achievement state
   const [achievements,  setAchievements]  = useState({});
   const [openAchGoalId, setOpenAchGoalId] = useState(null);
   const [achForm,       setAchForm]       = useState({ actual_value: '', actual_date: '', goal_status: 'not_started' });
@@ -158,7 +155,6 @@ export default function GoalSheet() {
   const handleSaveAchievement = async (goal) => {
     if (!achForm.goal_status) { setAchError('Please select a status.'); return; }
 
-    // Quarterly window enforcement
     const activeQuarter = getActiveQuarter();
     if (activeQuarter && achPhase !== activeQuarter) {
       const activeLabel = QUARTERS.find(q => q.value === activeQuarter)?.label;
@@ -199,7 +195,6 @@ export default function GoalSheet() {
 
   const totalWeightage = realGoals.reduce((s, g) => s + parseFloat(g.weightage || 0), 0);
 
-  // Only add back editing weight if goal is currently counted in totalWeightage
   const editingWeight = (editingGoal &&
     editingGoal.status !== 'returned' &&
     !(editingGoal.is_shared && parseFloat(editingGoal.weightage || 0) === 0))
@@ -220,7 +215,6 @@ export default function GoalSheet() {
   const isActiveCycle     = cycle?.is_active;
   const activeQuarter     = getActiveQuarter();
 
-  // Form helpers
   const openAddForm = () => {
     setEditingGoal(null); setForm(emptyForm); setFormError(''); setShowForm(true);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
@@ -319,10 +313,511 @@ export default function GoalSheet() {
 
         {/* ── Main content column ── */}
         <div className="flex-1 min-w-0 space-y-4">
-          {/* ALL your existing content goes here unchanged */}
-          {/* pageError, cycle banner, weightage tracker, */}
-          {/* returned goals, goal cards, add button, form, submit banner */}
-        </div>
+
+          {pageError && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4 text-sm text-yellow-800">{pageError}</div>
+          )}
+
+          {/* Cycle banner with picker */}
+          {allCycles.length > 0 && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-indigo-800">{cycle?.name}</p>
+                  <p className="text-xs text-indigo-500 mt-0.5">
+                    {cycle && `Open until ${new Date(cycle.closes_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`}
+                    {!isActiveCycle && <span className="ml-2 text-orange-500 font-medium">(Inactive — view only)</span>}
+                    {activeQuarter && isActiveCycle && (
+                      <span className="ml-2 font-medium text-indigo-700">
+                        · {QUARTERS.find(q => q.value === activeQuarter)?.label} check-in window active
+                      </span>
+                    )}
+                    {!activeQuarter && isActiveCycle && (
+                      <span className="ml-2 text-indigo-600"> · Goal setting phase</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {allApproved && isActiveCycle && (
+                    <span className="text-xs font-medium bg-green-100 text-green-700 px-3 py-1 rounded-full">All approved ✓</span>
+                  )}
+                  {allCycles.length > 1 && (
+                    <select value={selectedCycleId || ''}
+                      onChange={e => handleCycleChange(parseInt(e.target.value))}
+                      className="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 bg-white text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                      {allCycles.map(c => (
+                        <option key={c.id} value={c.id}>{c.name} {c.is_active ? '(active)' : ''}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Weightage tracker */}
+          {cycle && (
+            <div className="bg-white border border-gray-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-gray-700">Total weightage</p>
+                <p className={`text-sm font-semibold ${weightageComplete ? 'text-green-600' : 'text-gray-800'}`}>
+                  {totalWeightage.toFixed(1)}% / 100%
+                </p>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div className={`h-2 rounded-full transition-all duration-300 ${
+                  totalWeightage > 100 ? 'bg-red-500' : weightageComplete ? 'bg-green-500' : 'bg-indigo-500'
+                }`} style={{ width: `${Math.min(totalWeightage, 100)}%` }} />
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-gray-400">
+                <span>{realGoals.length} / 8 goals</span>
+                <span>{weightageComplete ? '✓ Ready to submit' : `${(100 - totalWeightage).toFixed(1)}% still to allocate`}</span>
+              </div>
+              {unsetSharedGoals.length > 0 && (
+                <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-700">
+                  ⚠ {unsetSharedGoals.length} shared KPI{unsetSharedGoals.length > 1 ? 's' : ''} below need a weightage before they count.
+                </div>
+              )}
+              {hasDraftGoals && (
+                <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                  💡 <span className="font-medium">Tip:</span> Goals are editable until submitted. After approval, contact your manager if changes are needed.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Returned goals */}
+          {returnedGoals.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-red-700 mb-1">⚠ {returnedGoals.length} goal{returnedGoals.length > 1 ? 's' : ''} returned for rework</p>
+              <p className="text-xs text-red-500 mb-3">Edit and resubmit these goals.</p>
+              {returnedGoals.map(goal => (
+                <div key={goal.id} className="bg-white border border-red-200 rounded-lg p-3 mb-2 last:mb-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900">{goal.title}</p>
+                      <p className="text-xs text-gray-400">{goal.thrust_area} · {goal.weightage}%</p>
+                      {goal.return_comment && (
+                        <div className="mt-2 bg-red-50 rounded px-2 py-1.5 text-xs text-red-700">
+                          <span className="font-medium">Manager's note:</span> {goal.return_comment}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button onClick={() => openEditForm(goal)}
+                        className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700">Edit & fix</button>
+                      <button onClick={() => handleDelete(goal.id)}
+                        className="text-xs px-3 py-1.5 border border-red-200 text-red-500 rounded-lg hover:bg-red-50">Delete</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Goal cards */}
+          <div className="space-y-3">
+            {realGoals.length === 0 && unsetSharedGoals.length === 0 && !showForm && (
+              <div className="text-center py-10 bg-white border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
+                No goals yet — click "+ Add goal" below to get started.
+              </div>
+            )}
+
+            {realGoals.map((goal) => {
+              const goalAchs = achievements[goal.id] ?? [];
+              const isAchOpen = openAchGoalId === goal.id;
+              return (
+                <div key={goal.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
+                  <div className="p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">{goal.thrust_area}</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-md capitalize ${STATUS_COLORS[goal.status]}`}>{goal.status}</span>
+                          {goal.is_shared && <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md font-medium">Shared KPI</span>}
+                          {goal.is_locked && <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">🔒 Locked</span>}
+                        </div>
+                        <h3 className="text-sm font-semibold text-gray-900">{goal.title}</h3>
+                        {goal.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{goal.description}</p>}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-400">
+                          <span>UoM: <span className="text-gray-600">{UOM_OPTIONS.find(u => u.value === goal.uom_type)?.label}</span></span>
+                          {goal.target_value != null && <span>Target: <span className="text-gray-600">{goal.target_value}</span></span>}
+                          {goal.target_date && <span>By: <span className="text-gray-600">{new Date(goal.target_date).toLocaleDateString('en-IN')}</span></span>}
+                          <span className="font-semibold text-indigo-600">{goal.weightage}%</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                        {goal.status === 'draft' && !goal.is_locked && (
+                          <div className="flex gap-2">
+                            <button onClick={() => openEditForm(goal)} className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Edit</button>
+                            <button onClick={() => handleDelete(goal.id)} className="text-xs px-3 py-1.5 border border-red-100 rounded-lg text-red-500 hover:bg-red-50">Delete</button>
+                          </div>
+                        )}
+                        {goal.status === 'approved' && isActiveCycle && (
+                          <button onClick={() => toggleAchievement(goal.id)}
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                              isAchOpen ? 'bg-indigo-600 text-white' : 'border border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                            }`}>
+                            {isAchOpen ? 'Close' : '📊 Log achievement'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {goal.is_locked && goal.status === 'approved' && (
+                    <p className="text-xs text-gray-400 mt-2 px-5 pb-4">
+                      🔒 This goal is locked. If you need changes, please speak to your manager.
+                    </p>
+                  )}
+                  {/* Achievement panel */}
+                  {isAchOpen && (
+                    <div className="border-t border-gray-100 bg-gray-50 p-5">
+                      <h4 className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Quarterly Achievement Tracking</h4>
+
+                      <div className={`rounded-lg px-3 py-2 text-xs mb-4 ${
+                        activeQuarter
+                          ? 'bg-indigo-50 border border-indigo-200 text-indigo-700'
+                          : 'bg-gray-100 border border-gray-200 text-gray-500'
+                      }`}>
+                        {activeQuarter
+                          ? `✓ Active check-in window: ${QUARTERS.find(q => q.value === activeQuarter)?.label} — ${QUARTERS.find(q => q.value === activeQuarter)?.window}`
+                          : 'No active check-in window — currently in goal setting phase. You can still log achievements but they are outside the scheduled window.'}
+                      </div>
+
+                      {goalAchs.length > 0 && (
+                        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          {QUARTERS.map(q => {
+                            const ach = goalAchs.find(a => a.cycle_phase === q.value);
+                            return (
+                              <div key={q.value} className={`rounded-lg p-2.5 text-xs border ${
+                                ach ? 'bg-white border-indigo-100' : 'bg-gray-100 border-gray-200 opacity-50'
+                              }`}>
+                                <p className="font-semibold text-gray-600">{q.label}</p>
+                                {ach ? (
+                                  <>
+                                    <p className="text-gray-800 mt-0.5">
+                                      {ach.actual_value != null
+                                        ? ach.actual_value
+                                        : ach.actual_date
+                                          ? new Date(ach.actual_date).toLocaleDateString('en-IN')
+                                          : '—'}
+                                    </p>
+                                    <p className={`font-medium mt-0.5 capitalize ${
+                                      ach.goal_status === 'completed' ? 'text-green-600' :
+                                      ach.goal_status === 'on_track'  ? 'text-blue-600' : 'text-gray-400'
+                                    }`}>{ach.goal_status?.replace('_', ' ')}</p>
+                                    {ach.score != null && (
+                                      <p className={`mt-0.5 ${scoreColor(ach.score)}`}>
+                                        Score: {parseFloat(ach.score).toFixed(0)}%
+                                      </p>
+                                    )}
+                                  </>
+                                ) : <p className="text-gray-400 mt-0.5">Not logged</p>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="bg-white border border-indigo-100 rounded-xl p-4">
+                        <p className="text-xs font-semibold text-gray-700 mb-3">Log / update achievement</p>
+
+                        {achError && (
+                          <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg mb-3">⚠ {achError}</div>
+                        )}
+
+                        <div className="mb-3">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
+                          <div className="flex gap-2 flex-wrap">
+                            {QUARTERS.map(q => (
+                              <button key={q.value} onClick={() => {
+                                setAchPhase(q.value);
+                                const existing = goalAchs.find(a => a.cycle_phase === q.value);
+                                setAchForm(existing ? {
+                                  actual_value: existing.actual_value ?? '',
+                                  actual_date:  existing.actual_date ? existing.actual_date.split('T')[0] : '',
+                                  goal_status:  existing.goal_status ?? 'not_started',
+                                } : { actual_value: '', actual_date: '', goal_status: 'not_started' });
+                              }}
+                                className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${
+                                  achPhase === q.value ? 'bg-indigo-600 text-white border-indigo-600' :
+                                  q.value === activeQuarter ? 'border-indigo-300 text-indigo-600 bg-indigo-50' :
+                                  'border-gray-200 text-gray-500 hover:border-gray-300'
+                                }`}>
+                                {q.label}{q.value === activeQuarter && <span className="ml-1 text-indigo-400">●</span>}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Window: {QUARTERS.find(q => q.value === achPhase)?.window}
+                            {achPhase !== activeQuarter && activeQuarter && (
+                              <span className="text-orange-500 ml-2">⚠ Not the active window</span>
+                            )}
+                          </p>
+                        </div>
+
+                        {['min','max'].includes(goal.uom_type) && (
+                          <div className="mb-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Actual value
+                              {goal.target_value && <span className="text-gray-400 font-normal ml-1">(planned: {goal.target_value})</span>}
+                            </label>
+                            <input type="number" value={achForm.actual_value}
+                              onChange={e => setAchForm(p => ({ ...p, actual_value: e.target.value }))}
+                              placeholder="Enter actual achieved value"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          </div>
+                        )}
+                        {goal.uom_type === 'timeline' && (
+                          <div className="mb-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Actual completion date
+                              {goal.target_date && <span className="text-gray-400 font-normal ml-1">(deadline: {new Date(goal.target_date).toLocaleDateString('en-IN')})</span>}
+                            </label>
+                            <input type="date" value={achForm.actual_date}
+                              onChange={e => setAchForm(p => ({ ...p, actual_date: e.target.value }))}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          </div>
+                        )}
+                        {goal.uom_type === 'zero' && (
+                          <div className="mb-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Actual count (0 = success)</label>
+                            <input type="number" value={achForm.actual_value} min="0"
+                              onChange={e => setAchForm(p => ({ ...p, actual_value: e.target.value }))}
+                              placeholder="0 for zero incidents"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          </div>
+                        )}
+
+                        <div className="mb-4">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Progress status</label>
+                          <div className="flex gap-2">
+                            {GOAL_STATUS_OPTIONS.map(opt => (
+                              <button key={opt.value} onClick={() => setAchForm(p => ({ ...p, goal_status: opt.value }))}
+                                className={`flex-1 text-xs py-2 rounded-lg border font-medium transition-colors ${
+                                  achForm.goal_status === opt.value
+                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                    : 'border-gray-200 text-gray-600 hover:border-indigo-300'
+                                }`}>
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <button onClick={() => handleSaveAchievement(goal)} disabled={achSaving}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-sm font-medium py-2.5 rounded-lg">
+                          {achSaving ? 'Saving...' : 'Save achievement'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Unset shared goals */}
+            {unsetSharedGoals.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-purple-600 px-1">Shared KPIs — set your weightage to include these</p>
+                {unsetSharedGoals.map(goal => (
+                  <div key={goal.id} className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">{goal.thrust_area}</span>
+                          <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md font-medium">Shared KPI</span>
+                          <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md">Weightage not set</span>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900">{goal.title}</p>
+                        {goal.description && <p className="text-xs text-gray-500 mt-0.5">{goal.description}</p>}
+                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                          <span>UoM: <span className="text-gray-600">{UOM_OPTIONS.find(u => u.value === goal.uom_type)?.label}</span></span>
+                          {goal.target_value != null && <span>Target: <span className="text-gray-600">{goal.target_value}</span></span>}
+                        </div>
+                        <p className="text-xs text-purple-600 mt-2">ℹ Title and target are fixed. Only weightage can be changed.</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => openEditForm(goal)}
+                          className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Set weightage</button>
+                        <button onClick={() => handleDelete(goal.id)}
+                          className="text-xs px-3 py-1.5 border border-purple-200 text-purple-500 rounded-lg hover:bg-purple-100">Decline</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Add goal button */}
+          {cycle && isActiveCycle && !isFullyLocked && canAddMore && !showForm && (
+            remainingWeight < 10 && !editingGoal ? (
+              <div className="w-full border-2 border-dashed border-orange-200 rounded-xl py-4 text-sm text-orange-500 text-center bg-orange-50">
+                Only {remainingWeight}% remaining — edit an existing goal to free up space.
+              </div>
+            ) : (
+              <button onClick={openAddForm}
+                className="w-full border-2 border-dashed border-gray-300 rounded-xl py-4 text-sm text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-colors">
+                + Add goal
+              </button>
+            )
+          )}
+
+          {/* Goal form */}
+          {showForm && (
+            <div ref={formRef} className="bg-white border border-indigo-200 rounded-xl p-6 scroll-mt-20">
+              <h2 className="text-sm font-semibold text-gray-800 mb-4">
+                {editingGoal?.is_shared ? 'Set weightage for shared KPI' : editingGoal ? 'Edit goal' : 'New goal'}
+              </h2>
+              {!editingGoal && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
+                  ✏️ Write a <span className="font-medium">SMART goal</span> — Specific, Measurable, Achievable, Relevant, Time-bound.
+                  Example: <em>"Achieve ₹50L in Q1 sales by March 2026"</em> rather than <em>"Increase sales"</em>.
+                </div>
+              )}
+              {formError && (
+                <div ref={errorRef} className="bg-red-50 border border-red-300 text-red-700 text-sm px-4 py-3 rounded-lg mb-4 font-medium">
+                  ⚠ {formError}
+                </div>
+              )}
+              {!formError && (
+                <div className="text-xs px-3 py-2 rounded-lg mb-4 bg-indigo-50 text-indigo-700">
+                  {editingGoal?.is_shared
+                    ? `${remainingWeight}% available · currently ${editingGoal.weightage}% · minimum 10%`
+                    : editingGoal
+                      ? `Editing: currently ${editingGoal.weightage}% · up to ${remainingWeight}% available`
+                      : `${remainingWeight}% available · minimum 10% per goal`}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {editingGoal?.is_shared ? (
+                  <>
+                    <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+                      <p><span className="font-medium">Title:</span> {editingGoal.title}</p>
+                      <p><span className="font-medium">Thrust area:</span> {editingGoal.thrust_area}</p>
+                      <p><span className="font-medium">UoM:</span> {UOM_OPTIONS.find(u => u.value === editingGoal.uom_type)?.label}</p>
+                      {editingGoal.target_value && <p><span className="font-medium">Target:</span> {editingGoal.target_value}</p>}
+                      <p className="text-purple-600 mt-1">Set by your manager — only weightage can be changed.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Your weightage (%) <span className="text-red-400">*</span></label>
+                      <input type="number" name="weightage" value={form.weightage} onChange={handleChange}
+                        min="10" max={remainingWeight} step="1"
+                        placeholder={`Min 10% — up to ${remainingWeight}% available`}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Thrust area <span className="text-red-400">*</span></label>
+                      <select name="thrust_area" value={form.thrust_area} onChange={handleChange}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="">Select thrust area...</option>
+                        {THRUST_AREAS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Goal title <span className="text-red-400">*</span></label>
+                      <input type="text" name="title" value={form.title} onChange={handleChange}
+                        placeholder="e.g. Achieve ₹50L in Q1 sales"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+                      <textarea name="description" value={form.description} onChange={handleChange}
+                        rows={2} placeholder="Brief context..."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-2">Unit of measurement <span className="text-red-400">*</span></label>
+                      <div className="space-y-2">
+                        {UOM_OPTIONS.map(opt => (
+                          <label key={opt.value} className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                            form.uom_type === opt.value ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'
+                          }`}>
+                            <input type="radio" name="uom_type" value={opt.value}
+                              checked={form.uom_type === opt.value} onChange={handleChange} className="mt-0.5 accent-indigo-600" />
+                            <div>
+                              <p className="text-xs font-medium text-gray-800">{opt.label}</p>
+                              <p className="text-xs text-gray-400">{opt.example}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {['min','max'].includes(form.uom_type) && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Target value</label>
+                        <input type="number" name="target_value" value={form.target_value} onChange={handleChange}
+                          placeholder="e.g. 5000000 or 95"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    )}
+                    {form.uom_type === 'timeline' && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Target deadline</label>
+                        <input type="date" name="target_date" value={form.target_date} onChange={handleChange}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    )}
+                    {form.uom_type === 'zero' && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
+                        Zero-based: success = achieving zero. No numeric target needed.
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Weightage (%) <span className="text-red-400">*</span></label>
+                      <input type="number" name="weightage" value={form.weightage} onChange={handleChange}
+                        min="10" max="100" step="1"
+                        placeholder={`Min 10% — ${remainingWeight}% available`}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <p className="text-xs text-gray-400 mt-1">{remainingWeight}% available · minimum 10% per goal</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button onClick={handleSaveDraft} disabled={saving}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-sm font-medium py-2.5 rounded-lg">
+                  {saving ? 'Saving...' : editingGoal ? 'Save changes' : 'Save as draft'}
+                </button>
+                <button onClick={closeForm} disabled={saving}
+                  className="px-5 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Submit banner */}
+          {cycle && isActiveCycle && hasDraftGoals && !showForm && (
+            <div className={`bg-white border rounded-xl p-5 ${weightageComplete ? 'border-green-200' : 'border-gray-200'}`}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Ready to submit?</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {weightageComplete
+                      ? 'All 100% allocated. Submit for manager approval.'
+                      : `${(100 - totalWeightage).toFixed(1)}% still to allocate before submitting.`}
+                  </p>
+                </div>
+                <button onClick={handleSubmitAll} disabled={submitting || !weightageComplete}
+                  className="flex-shrink-0 bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-medium px-5 py-2.5 rounded-lg">
+                  {submitting ? 'Submitting...' : 'Submit for approval'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {hasSubmittedGoals && !hasDraftGoals && !allApproved && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 text-sm text-blue-700">
+              ✓ Goals submitted — awaiting manager approval.
+            </div>
+          )}
+
+        </div>{/* end main column */}
 
         {/* ── Right sidebar ── */}
         <div className="w-64 flex-shrink-0 space-y-4 sticky top-20">
@@ -400,515 +895,9 @@ export default function GoalSheet() {
             </div>
           )}
 
-        </div>
-      </div>
+        </div>{/* end sidebar */}
 
-        {pageError && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4 text-sm text-yellow-800">{pageError}</div>
-        )}
-
-        {/* Cycle banner with picker */}
-        {allCycles.length > 0 && (
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <p className="text-sm font-semibold text-indigo-800">{cycle?.name}</p>
-                <p className="text-xs text-indigo-500 mt-0.5">
-                  {cycle && `Open until ${new Date(cycle.closes_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`}
-                  {!isActiveCycle && <span className="ml-2 text-orange-500 font-medium">(Inactive — view only)</span>}
-                  {activeQuarter && isActiveCycle && (
-                    <span className="ml-2 font-medium text-indigo-700">
-                      · {QUARTERS.find(q => q.value === activeQuarter)?.label} check-in window active
-                    </span>
-                  )}
-                  {!activeQuarter && isActiveCycle && (
-                    <span className="ml-2 text-indigo-600"> · Goal setting phase</span>
-                  )}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {allApproved && isActiveCycle && (
-                  <span className="text-xs font-medium bg-green-100 text-green-700 px-3 py-1 rounded-full">All approved ✓</span>
-                )}
-                {allCycles.length > 1 && (
-                  <select value={selectedCycleId || ''}
-                    onChange={e => handleCycleChange(parseInt(e.target.value))}
-                    className="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 bg-white text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-400">
-                    {allCycles.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} {c.is_active ? '(active)' : ''}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Weightage tracker */}
-        {cycle && (
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-gray-700">Total weightage</p>
-              <p className={`text-sm font-semibold ${weightageComplete ? 'text-green-600' : 'text-gray-800'}`}>
-                {totalWeightage.toFixed(1)}% / 100%
-              </p>
-            </div>
-            <div className="w-full bg-gray-100 rounded-full h-2">
-              <div className={`h-2 rounded-full transition-all duration-300 ${
-                totalWeightage > 100 ? 'bg-red-500' : weightageComplete ? 'bg-green-500' : 'bg-indigo-500'
-              }`} style={{ width: `${Math.min(totalWeightage, 100)}%` }} />
-            </div>
-            <div className="flex justify-between mt-2 text-xs text-gray-400">
-              <span>{realGoals.length} / 8 goals</span>
-              <span>{weightageComplete ? '✓ Ready to submit' : `${(100 - totalWeightage).toFixed(1)}% still to allocate`}</span>
-            </div>
-            {unsetSharedGoals.length > 0 && (
-              <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-700">
-                ⚠ {unsetSharedGoals.length} shared KPI{unsetSharedGoals.length > 1 ? 's' : ''} below need a weightage before they count.
-              </div>
-            )}
-            {hasDraftGoals && (
-              <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
-                💡 <span className="font-medium">Tip:</span> Goals are editable until submitted. After approval, contact your manager if changes are needed.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Returned goals */}
-        {returnedGoals.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-            <p className="text-sm font-semibold text-red-700 mb-1">⚠ {returnedGoals.length} goal{returnedGoals.length > 1 ? 's' : ''} returned for rework</p>
-            <p className="text-xs text-red-500 mb-3">Edit and resubmit these goals.</p>
-            {returnedGoals.map(goal => (
-              <div key={goal.id} className="bg-white border border-red-200 rounded-lg p-3 mb-2 last:mb-0">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">{goal.title}</p>
-                    <p className="text-xs text-gray-400">{goal.thrust_area} · {goal.weightage}%</p>
-                    {goal.return_comment && (
-                      <div className="mt-2 bg-red-50 rounded px-2 py-1.5 text-xs text-red-700">
-                        <span className="font-medium">Manager's note:</span> {goal.return_comment}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={() => openEditForm(goal)}
-                      className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700">Edit & fix</button>
-                    <button onClick={() => handleDelete(goal.id)}
-                      className="text-xs px-3 py-1.5 border border-red-200 text-red-500 rounded-lg hover:bg-red-50">Delete</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Goal cards */}
-        <div className="space-y-3">
-          {realGoals.length === 0 && unsetSharedGoals.length === 0 && !showForm && (
-            <div className="text-center py-10 bg-white border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
-              No goals yet — click "+ Add goal" below to get started.
-            </div>
-          )}
-
-          {realGoals.map((goal) => {
-            const goalAchs = achievements[goal.id] ?? [];
-            const isAchOpen = openAchGoalId === goal.id;
-            return (
-              <div key={goal.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
-                <div className="p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-2">
-                        <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">{goal.thrust_area}</span>
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-md capitalize ${STATUS_COLORS[goal.status]}`}>{goal.status}</span>
-                        {goal.is_shared && <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md font-medium">Shared KPI</span>}
-                        {goal.is_locked && <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">🔒 Locked</span>}
-                      </div>
-                      <h3 className="text-sm font-semibold text-gray-900">{goal.title}</h3>
-                      {goal.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{goal.description}</p>}
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-400">
-                        <span>UoM: <span className="text-gray-600">{UOM_OPTIONS.find(u => u.value === goal.uom_type)?.label}</span></span>
-                        {goal.target_value != null && <span>Target: <span className="text-gray-600">{goal.target_value}</span></span>}
-                        {goal.target_date && <span>By: <span className="text-gray-600">{new Date(goal.target_date).toLocaleDateString('en-IN')}</span></span>}
-                        <span className="font-semibold text-indigo-600">{goal.weightage}%</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      {goal.status === 'draft' && !goal.is_locked && (
-                        <div className="flex gap-2">
-                          <button onClick={() => openEditForm(goal)} className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Edit</button>
-                          <button onClick={() => handleDelete(goal.id)} className="text-xs px-3 py-1.5 border border-red-100 rounded-lg text-red-500 hover:bg-red-50">Delete</button>
-                        </div>
-                      )}
-                      {goal.status === 'approved' && isActiveCycle && (
-                        <button onClick={() => toggleAchievement(goal.id)}
-                          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                            isAchOpen ? 'bg-indigo-600 text-white' : 'border border-indigo-200 text-indigo-600 hover:bg-indigo-50'
-                          }`}>
-                          {isAchOpen ? 'Close' : '📊 Log achievement'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {goal.is_locked && goal.status === 'approved' && (
-                  <p className="text-xs text-gray-400 mt-2 px-5 pb-4">
-                    🔒 This goal is locked. If you need changes, please speak to your manager.
-                  </p>
-                )}
-                {/* Achievement panel */}
-                {isAchOpen && (
-                  <div className="border-t border-gray-100 bg-gray-50 p-5">
-                    <h4 className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Quarterly Achievement Tracking</h4>
-
-                    {/* Quarter window info banner */}
-                    <div className={`rounded-lg px-3 py-2 text-xs mb-4 ${
-                      activeQuarter
-                        ? 'bg-indigo-50 border border-indigo-200 text-indigo-700'
-                        : 'bg-gray-100 border border-gray-200 text-gray-500'
-                    }`}>
-                      {activeQuarter
-                        ? `✓ Active check-in window: ${QUARTERS.find(q => q.value === activeQuarter)?.label} — ${QUARTERS.find(q => q.value === activeQuarter)?.window}`
-                        : 'No active check-in window — currently in goal setting phase. You can still log achievements but they are outside the scheduled window.'}
-                    </div>
-
-                    {/* Past achievements grid */}
-                    {goalAchs.length > 0 && (
-                      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        {QUARTERS.map(q => {
-                          const ach = goalAchs.find(a => a.cycle_phase === q.value);
-                          return (
-                            <div key={q.value} className={`rounded-lg p-2.5 text-xs border ${
-                              ach ? 'bg-white border-indigo-100' : 'bg-gray-100 border-gray-200 opacity-50'
-                            }`}>
-                              <p className="font-semibold text-gray-600">{q.label}</p>
-                              {ach ? (
-                                <>
-                                  <p className="text-gray-800 mt-0.5">
-                                    {ach.actual_value != null
-                                      ? ach.actual_value
-                                      : ach.actual_date
-                                        ? new Date(ach.actual_date).toLocaleDateString('en-IN')
-                                        : '—'}
-                                  </p>
-                                  <p className={`font-medium mt-0.5 capitalize ${
-                                    ach.goal_status === 'completed' ? 'text-green-600' :
-                                    ach.goal_status === 'on_track'  ? 'text-blue-600' : 'text-gray-400'
-                                  }`}>{ach.goal_status?.replace('_', ' ')}</p>
-                                  {ach.score != null && (
-                                    <p className={`mt-0.5 ${scoreColor(ach.score)}`}>
-                                      Score: {parseFloat(ach.score).toFixed(0)}%
-                                    </p>
-                                  )}
-                                </>
-                              ) : <p className="text-gray-400 mt-0.5">Not logged</p>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Log form */}
-                    <div className="bg-white border border-indigo-100 rounded-xl p-4">
-                      <p className="text-xs font-semibold text-gray-700 mb-3">Log / update achievement</p>
-
-                      {achError && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg mb-3">⚠ {achError}</div>
-                      )}
-
-                      {/* Quarter selector */}
-                      <div className="mb-3">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
-                        <div className="flex gap-2 flex-wrap">
-                          {QUARTERS.map(q => (
-                            <button key={q.value} onClick={() => {
-                              setAchPhase(q.value);
-                              const existing = goalAchs.find(a => a.cycle_phase === q.value);
-                              setAchForm(existing ? {
-                                actual_value: existing.actual_value ?? '',
-                                actual_date:  existing.actual_date ? existing.actual_date.split('T')[0] : '',
-                                goal_status:  existing.goal_status ?? 'not_started',
-                              } : { actual_value: '', actual_date: '', goal_status: 'not_started' });
-                            }}
-                              className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${
-                                achPhase === q.value ? 'bg-indigo-600 text-white border-indigo-600' :
-                                q.value === activeQuarter ? 'border-indigo-300 text-indigo-600 bg-indigo-50' :
-                                'border-gray-200 text-gray-500 hover:border-gray-300'
-                              }`}>
-                              {q.label}{q.value === activeQuarter && <span className="ml-1 text-indigo-400">●</span>}
-                            </button>
-                          ))}
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Window: {QUARTERS.find(q => q.value === achPhase)?.window}
-                          {achPhase !== activeQuarter && activeQuarter && (
-                            <span className="text-orange-500 ml-2">⚠ Not the active window</span>
-                          )}
-                        </p>
-                      </div>
-
-                      {['min','max'].includes(goal.uom_type) && (
-                        <div className="mb-3">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Actual value
-                            {goal.target_value && <span className="text-gray-400 font-normal ml-1">(planned: {goal.target_value})</span>}
-                          </label>
-                          <input type="number" value={achForm.actual_value}
-                            onChange={e => setAchForm(p => ({ ...p, actual_value: e.target.value }))}
-                            placeholder="Enter actual achieved value"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        </div>
-                      )}
-                      {goal.uom_type === 'timeline' && (
-                        <div className="mb-3">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Actual completion date
-                            {goal.target_date && <span className="text-gray-400 font-normal ml-1">(deadline: {new Date(goal.target_date).toLocaleDateString('en-IN')})</span>}
-                          </label>
-                          <input type="date" value={achForm.actual_date}
-                            onChange={e => setAchForm(p => ({ ...p, actual_date: e.target.value }))}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        </div>
-                      )}
-                      {goal.uom_type === 'zero' && (
-                        <div className="mb-3">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Actual count (0 = success)</label>
-                          <input type="number" value={achForm.actual_value} min="0"
-                            onChange={e => setAchForm(p => ({ ...p, actual_value: e.target.value }))}
-                            placeholder="0 for zero incidents"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        </div>
-                      )}
-
-                      <div className="mb-4">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Progress status</label>
-                        <div className="flex gap-2">
-                          {GOAL_STATUS_OPTIONS.map(opt => (
-                            <button key={opt.value} onClick={() => setAchForm(p => ({ ...p, goal_status: opt.value }))}
-                              className={`flex-1 text-xs py-2 rounded-lg border font-medium transition-colors ${
-                                achForm.goal_status === opt.value
-                                  ? 'bg-indigo-600 text-white border-indigo-600'
-                                  : 'border-gray-200 text-gray-600 hover:border-indigo-300'
-                              }`}>
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <button onClick={() => handleSaveAchievement(goal)} disabled={achSaving}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-sm font-medium py-2.5 rounded-lg">
-                        {achSaving ? 'Saving...' : 'Save achievement'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Unset shared goals */}
-          {unsetSharedGoals.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-purple-600 px-1">Shared KPIs — set your weightage to include these</p>
-              {unsetSharedGoals.map(goal => (
-                <div key={goal.id} className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">{goal.thrust_area}</span>
-                        <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md font-medium">Shared KPI</span>
-                        <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md">Weightage not set</span>
-                      </div>
-                      <p className="text-sm font-semibold text-gray-900">{goal.title}</p>
-                      {goal.description && <p className="text-xs text-gray-500 mt-0.5">{goal.description}</p>}
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                        <span>UoM: <span className="text-gray-600">{UOM_OPTIONS.find(u => u.value === goal.uom_type)?.label}</span></span>
-                        {goal.target_value != null && <span>Target: <span className="text-gray-600">{goal.target_value}</span></span>}
-                      </div>
-                      <p className="text-xs text-purple-600 mt-2">ℹ Title and target are fixed. Only weightage can be changed.</p>
-                    </div>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <button onClick={() => openEditForm(goal)}
-                        className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Set weightage</button>
-                      <button onClick={() => handleDelete(goal.id)}
-                        className="text-xs px-3 py-1.5 border border-purple-200 text-purple-500 rounded-lg hover:bg-purple-100">Decline</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Add goal button */}
-        {cycle && isActiveCycle && !isFullyLocked && canAddMore && !showForm && (
-          remainingWeight < 10 && !editingGoal ? (
-            <div className="w-full border-2 border-dashed border-orange-200 rounded-xl py-4 text-sm text-orange-500 text-center bg-orange-50">
-              Only {remainingWeight}% remaining — edit an existing goal to free up space.
-            </div>
-          ) : (
-            <button onClick={openAddForm}
-              className="w-full border-2 border-dashed border-gray-300 rounded-xl py-4 text-sm text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-colors">
-              + Add goal
-            </button>
-          )
-        )}
-
-        {/* Goal form */}
-        {showForm && (
-          <div ref={formRef} className="bg-white border border-indigo-200 rounded-xl p-6 scroll-mt-20">
-            <h2 className="text-sm font-semibold text-gray-800 mb-4">
-              {editingGoal?.is_shared ? 'Set weightage for shared KPI' : editingGoal ? 'Edit goal' : 'New goal'}
-            </h2>
-            {!editingGoal && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
-                ✏️ Write a <span className="font-medium">SMART goal</span> — Specific, Measurable, Achievable, Relevant, Time-bound.
-                Example: <em>"Achieve ₹50L in Q1 sales by March 2026"</em> rather than <em>"Increase sales"</em>.
-              </div>
-            )}
-            {formError && (
-              <div ref={errorRef} className="bg-red-50 border border-red-300 text-red-700 text-sm px-4 py-3 rounded-lg mb-4 font-medium">
-                ⚠ {formError}
-              </div>
-            )}
-            {!formError && (
-              <div className="text-xs px-3 py-2 rounded-lg mb-4 bg-indigo-50 text-indigo-700">
-                {editingGoal?.is_shared
-                  ? `${remainingWeight}% available · currently ${editingGoal.weightage}% · minimum 10%`
-                  : editingGoal
-                    ? `Editing: currently ${editingGoal.weightage}% · up to ${remainingWeight}% available`
-                    : `${remainingWeight}% available · minimum 10% per goal`}
-              </div>
-            )}
-
-            <div className="space-y-4">
-              {editingGoal?.is_shared ? (
-                <>
-                  <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
-                    <p><span className="font-medium">Title:</span> {editingGoal.title}</p>
-                    <p><span className="font-medium">Thrust area:</span> {editingGoal.thrust_area}</p>
-                    <p><span className="font-medium">UoM:</span> {UOM_OPTIONS.find(u => u.value === editingGoal.uom_type)?.label}</p>
-                    {editingGoal.target_value && <p><span className="font-medium">Target:</span> {editingGoal.target_value}</p>}
-                    <p className="text-purple-600 mt-1">Set by your manager — only weightage can be changed.</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Your weightage (%) <span className="text-red-400">*</span></label>
-                    <input type="number" name="weightage" value={form.weightage} onChange={handleChange}
-                      min="10" max={remainingWeight} step="1"
-                      placeholder={`Min 10% — up to ${remainingWeight}% available`}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Thrust area <span className="text-red-400">*</span></label>
-                    <select name="thrust_area" value={form.thrust_area} onChange={handleChange}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                      <option value="">Select thrust area...</option>
-                      {THRUST_AREAS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Goal title <span className="text-red-400">*</span></label>
-                    <input type="text" name="title" value={form.title} onChange={handleChange}
-                      placeholder="e.g. Achieve ₹50L in Q1 sales"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
-                    <textarea name="description" value={form.description} onChange={handleChange}
-                      rows={2} placeholder="Brief context..."
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-2">Unit of measurement <span className="text-red-400">*</span></label>
-                    <div className="space-y-2">
-                      {UOM_OPTIONS.map(opt => (
-                        <label key={opt.value} className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                          form.uom_type === opt.value ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'
-                        }`}>
-                          <input type="radio" name="uom_type" value={opt.value}
-                            checked={form.uom_type === opt.value} onChange={handleChange} className="mt-0.5 accent-indigo-600" />
-                          <div>
-                            <p className="text-xs font-medium text-gray-800">{opt.label}</p>
-                            <p className="text-xs text-gray-400">{opt.example}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  {['min','max'].includes(form.uom_type) && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Target value</label>
-                      <input type="number" name="target_value" value={form.target_value} onChange={handleChange}
-                        placeholder="e.g. 5000000 or 95"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    </div>
-                  )}
-                  {form.uom_type === 'timeline' && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Target deadline</label>
-                      <input type="date" name="target_date" value={form.target_date} onChange={handleChange}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    </div>
-                  )}
-                  {form.uom_type === 'zero' && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
-                      Zero-based: success = achieving zero. No numeric target needed.
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Weightage (%) <span className="text-red-400">*</span></label>
-                    <input type="number" name="weightage" value={form.weightage} onChange={handleChange}
-                      min="10" max="100" step="1"
-                      placeholder={`Min 10% — ${remainingWeight}% available`}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    <p className="text-xs text-gray-400 mt-1">{remainingWeight}% available · minimum 10% per goal</p>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button onClick={handleSaveDraft} disabled={saving}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-sm font-medium py-2.5 rounded-lg">
-                {saving ? 'Saving...' : editingGoal ? 'Save changes' : 'Save as draft'}
-              </button>
-              <button onClick={closeForm} disabled={saving}
-                className="px-5 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50">Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {/* Submit banner */}
-        {cycle && isActiveCycle && hasDraftGoals && !showForm && (
-          <div className={`bg-white border rounded-xl p-5 ${weightageComplete ? 'border-green-200' : 'border-gray-200'}`}>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-gray-800">Ready to submit?</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {weightageComplete
-                    ? 'All 100% allocated. Submit for manager approval.'
-                    : `${(100 - totalWeightage).toFixed(1)}% still to allocate before submitting.`}
-                </p>
-              </div>
-              <button onClick={handleSubmitAll} disabled={submitting || !weightageComplete}
-                className="flex-shrink-0 bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-medium px-5 py-2.5 rounded-lg">
-                {submitting ? 'Submitting...' : 'Submit for approval'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {hasSubmittedGoals && !hasDraftGoals && !allApproved && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 text-sm text-blue-700">
-            ✓ Goals submitted — awaiting manager approval.
-          </div>
-        )}
-      </div>
+      </div>{/* end flex wrapper */}
+    </div>
   );
 }
